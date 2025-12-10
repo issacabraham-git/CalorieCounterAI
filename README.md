@@ -14,12 +14,6 @@ This app allows users to log meals using natural language (e.g., *"I ate 2 eggs 
 * **Smart "Forgot Meal" Detection:** Automatically flags missing meals (e.g., "Lunch: Not Entered") in the export.
 * **Dark Mode UI:** Sleek, high-contrast interface designed for readability.
 
-## 📱 Screenshots
-
-| Dashboard & Totals | Natural Language Input | CSV/Excel Export |
-|:---:|:---:|:---:|
-| *(Drag your screenshot here)* | *(Drag your screenshot here)* | *(Drag your screenshot here)* |
-
 ## 🛠️ Tech Stack
 
 * **Language:** Kotlin
