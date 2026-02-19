@@ -55,6 +55,7 @@ data class UserProfile(
     val age: Int,
     val isMale: Boolean,
     val activityLevel: Float,
+    val goal: String = "Maintain", // NEW: Goal tracking
     val dailyCalorieTarget: Int
 )
 
@@ -94,14 +95,14 @@ class MainActivity : ComponentActivity() {
 fun saveUserProfile(context: Context, profile: UserProfile?) {
     val editor = context.getSharedPreferences("CalorieApp", Context.MODE_PRIVATE).edit()
     if (profile == null) {
-        editor.remove("user_profile").apply()
+        editor.remove("user_profile_v2").apply() // Changed key to avoid crash with old data
     } else {
-        editor.putString("user_profile", Gson().toJson(profile)).apply()
+        editor.putString("user_profile_v2", Gson().toJson(profile)).apply()
     }
 }
 
 fun loadUserProfile(context: Context): UserProfile? {
-    val json = context.getSharedPreferences("CalorieApp", Context.MODE_PRIVATE).getString("user_profile", null)
+    val json = context.getSharedPreferences("CalorieApp", Context.MODE_PRIVATE).getString("user_profile_v2", null)
     return if (json != null) Gson().fromJson(json, UserProfile::class.java) else null
 }
 
@@ -130,7 +131,6 @@ fun MainAppOrchestrator() {
         CalorieTrackerScreen(
             userProfile = userProfile!!,
             onEditProfile = {
-                // Clear the profile so the Onboarding screen shows up again
                 saveUserProfile(context, null)
                 userProfile = null
             }
@@ -149,16 +149,20 @@ fun OnboardingScreen(onComplete: (UserProfile) -> Unit) {
     var age by remember { mutableStateOf("") }
     var isMale by remember { mutableStateOf(true) }
     var activityMultiplier by remember { mutableStateOf(1.2f) }
+    var goal by remember { mutableStateOf("Maintain") }
 
     Column(
-        modifier = Modifier.fillMaxSize().padding(24.dp).verticalScroll(rememberScrollState()),
-        horizontalAlignment = Alignment.CenterHorizontally,
-        verticalArrangement = Arrangement.Center
+        modifier = Modifier
+            .fillMaxSize()
+            .systemBarsPadding() // <-- FIX 1: Keeps it above the phone's bottom navigation bar
+            .padding(24.dp)
+            .verticalScroll(rememberScrollState()),
+        horizontalAlignment = Alignment.CenterHorizontally
+        // <-- FIX 2: Removed "Arrangement.Center" so it scrolls normally from the top!
     ) {
         Text("Setup Your Profile", style = MaterialTheme.typography.displaySmall, color = Color(0xFFBB86FC))
         Spacer(modifier = Modifier.height(32.dp))
 
-        // TOGGLE SWITCH
         Row(verticalAlignment = Alignment.CenterVertically) {
             Text("Calculate for me", color = if(!isManualEntry) Color.White else Color.Gray)
             Switch(
@@ -198,14 +202,23 @@ fun OnboardingScreen(onComplete: (UserProfile) -> Unit) {
                 ActivityOption("Moderate (3-5 days/wk)", 1.55f, activityMultiplier) { activityMultiplier = 1.55f }
                 ActivityOption("Active (Heavy lifting)", 1.725f, activityMultiplier) { activityMultiplier = 1.725f }
             }
+
+            Spacer(modifier = Modifier.height(24.dp))
+            Text("Your Goal", color = Color.Gray)
+            Row(Modifier.fillMaxWidth().padding(top = 8.dp), horizontalArrangement = Arrangement.SpaceBetween) {
+                FilterChip(selected = goal == "Lose", onClick = { goal = "Lose" }, label = { Text("Lose") })
+                FilterChip(selected = goal == "Maintain", onClick = { goal = "Maintain" }, label = { Text("Maintain") })
+                FilterChip(selected = goal == "Gain", onClick = { goal = "Gain" }, label = { Text("Gain") })
+            }
         }
 
         Spacer(modifier = Modifier.height(32.dp))
+
         Button(
             onClick = {
                 if (isManualEntry) {
                     val target = manualCalories.toIntOrNull()
-                    if (target != null) onComplete(UserProfile(0f, 0f, 0, true, 0f, target))
+                    if (target != null) onComplete(UserProfile(0f, 0f, 0, true, 0f, "Custom", target))
                 } else {
                     val w = weight.toFloatOrNull()
                     val h = height.toFloatOrNull()
@@ -214,12 +227,21 @@ fun OnboardingScreen(onComplete: (UserProfile) -> Unit) {
                         val s = if (isMale) 5 else -161
                         val bmr = (10 * w) + (6.25 * h) - (5 * a) + s
                         val tdee = (bmr * activityMultiplier).toInt()
-                        onComplete(UserProfile(w, h, a, isMale, activityMultiplier, tdee))
+
+                        val finalTarget = when(goal) {
+                            "Lose" -> tdee - 500
+                            "Gain" -> tdee + 500
+                            else -> tdee
+                        }
+
+                        onComplete(UserProfile(w, h, a, isMale, activityMultiplier, goal, finalTarget))
                     }
                 }
             },
             modifier = Modifier.fillMaxWidth().height(50.dp), colors = ButtonDefaults.buttonColors(containerColor = Color(0xFF03DAC5))
         ) { Text("Save & Start", color = Color.Black, fontWeight = FontWeight.Bold) }
+
+        Spacer(modifier = Modifier.height(32.dp)) // Extra padding at the very bottom
     }
 }
 
@@ -337,13 +359,17 @@ fun CalorieTrackerScreen(userProfile: UserProfile, onEditProfile: () -> Unit) {
     } else {
         Column(modifier = Modifier.fillMaxSize().systemBarsPadding().padding(16.dp).verticalScroll(rememberScrollState())) {
 
-            // TOP BAR (SETTINGS & HISTORY)
-            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.End) {
-                IconButton(onClick = onEditProfile) { // <-- NEW EDIT BUTTON
-                    Icon(Icons.Default.Settings, "Edit Profile", tint = Color.Gray)
-                }
-                IconButton(onClick = { showHistoryScreen = true }) {
-                    Icon(Icons.AutoMirrored.Filled.List, "History", tint = Color(0xFFBB86FC))
+            Row(modifier = Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween, verticalAlignment = Alignment.CenterVertically) {
+                // Show goal in corner
+                Text("Goal: ${userProfile.goal}", color = Color(0xFFBB86FC), fontSize = 12.sp, fontWeight = FontWeight.Bold)
+
+                Row {
+                    IconButton(onClick = onEditProfile) {
+                        Icon(Icons.Default.Settings, "Edit Profile", tint = Color.Gray)
+                    }
+                    IconButton(onClick = { showHistoryScreen = true }) {
+                        Icon(Icons.AutoMirrored.Filled.List, "History", tint = Color(0xFFBB86FC))
+                    }
                 }
             }
 
@@ -367,7 +393,6 @@ fun CalorieTrackerScreen(userProfile: UserProfile, onEditProfile: () -> Unit) {
                 }
             }
 
-            // INPUT SECTION
             if (selectedBitmap != null) {
                 Box(modifier = Modifier.padding(bottom = 8.dp)) {
                     Image(bitmap = selectedBitmap!!.asImageBitmap(), contentDescription = "Food", modifier = Modifier.size(100.dp).clip(RoundedCornerShape(8.dp)))
